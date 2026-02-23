@@ -1,3 +1,4 @@
 flask
 gradio_client
 gunicorn
+Pillow

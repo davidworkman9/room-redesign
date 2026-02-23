@@ -1,8 +1,11 @@
 import os
 import base64
 import tempfile
+import time
+from io import BytesIO
 from flask import Flask, render_template, request, jsonify
 from gradio_client import Client, handle_file
+from PIL import Image
 
 app = Flask(__name__)
 
@@ -18,6 +21,7 @@ STYLES = {
 }
 
 GRADIO_SPACE = "Manjushri/Instruct-Pix-2-Pix"
+MAX_IMAGE_SIZE = 512
 
 
 @app.route("/")
@@ -45,22 +49,40 @@ def redesign():
     prompt = STYLES[style]
 
     try:
-        # Save uploaded image to temp file for gradio_client
+        # Resize image to max 512x512 to avoid overloading the free Space
+        img = Image.open(BytesIO(image_bytes))
+        img = img.convert("RGB")
+        w, h = img.size
+        if max(w, h) > MAX_IMAGE_SIZE:
+            ratio = MAX_IMAGE_SIZE / max(w, h)
+            img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            tmp.write(image_bytes)
+            img.save(tmp, format="PNG")
             tmp_path = tmp.name
 
-        client = Client(GRADIO_SPACE)
-        result_path = client.predict(
-            source_img=handle_file(tmp_path),
-            instructions=prompt,
-            guide=7.5,
-            steps=20,
-            seed=42,
-            api_name="/predict",
-        )
+        # Try up to 2 times in case the Space has a transient error
+        last_error = None
+        for attempt in range(2):
+            try:
+                client = Client(GRADIO_SPACE)
+                result_path = client.predict(
+                    source_img=handle_file(tmp_path),
+                    instructions=prompt,
+                    guide=7.5,
+                    steps=20,
+                    seed=42,
+                    api_name="/predict",
+                )
+                break
+            except Exception as e:
+                last_error = e
+                if attempt == 0:
+                    time.sleep(2)
+        else:
+            os.unlink(tmp_path)
+            return jsonify({"error": f"AI model error: {last_error}"}), 500
 
-        # Clean up temp file
         os.unlink(tmp_path)
 
         # Read result image and convert to base64 data URI
