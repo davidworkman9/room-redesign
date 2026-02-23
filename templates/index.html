@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Room Redesign</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; min-height: 100vh; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+  h1 { text-align: center; font-size: 2rem; margin-bottom: 0.5rem; color: #fff; }
+  .subtitle { text-align: center; color: #888; margin-bottom: 2rem; }
+
+  /* Upload area */
+  .upload-area {
+    border: 2px dashed #333; border-radius: 12px; padding: 3rem; text-align: center;
+    cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-bottom: 2rem;
+    background: #1a1a1a;
+  }
+  .upload-area:hover, .upload-area.dragover { border-color: #4a9eff; background: #1a2a3a; }
+  .upload-area.has-image { padding: 1rem; }
+  .upload-area img { max-width: 100%; max-height: 400px; border-radius: 8px; }
+  .upload-icon { font-size: 3rem; margin-bottom: 1rem; }
+  .upload-text { color: #888; }
+  .upload-text strong { color: #4a9eff; }
+  input[type="file"] { display: none; }
+
+  /* Styles grid */
+  .styles-section { margin-bottom: 2rem; }
+  .styles-section h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #aaa; }
+  .styles-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem;
+  }
+  .style-btn {
+    background: #1a1a1a; border: 2px solid #333; border-radius: 10px; padding: 1rem 0.5rem;
+    text-align: center; cursor: pointer; transition: all 0.2s; text-transform: capitalize;
+    font-size: 0.9rem; color: #ccc;
+  }
+  .style-btn:hover { border-color: #555; background: #222; }
+  .style-btn.selected { border-color: #4a9eff; background: #1a2a3a; color: #fff; }
+
+  /* Generate button */
+  .generate-btn {
+    display: block; width: 100%; padding: 1rem; font-size: 1.1rem; font-weight: 600;
+    background: #4a9eff; color: #fff; border: none; border-radius: 10px; cursor: pointer;
+    transition: background 0.2s; margin-bottom: 2rem;
+  }
+  .generate-btn:hover { background: #3a8eef; }
+  .generate-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+  /* Results */
+  .results { display: none; margin-bottom: 2rem; }
+  .results.visible { display: block; }
+  .results h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #aaa; }
+  .comparison {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+  }
+  .comparison .panel { background: #1a1a1a; border-radius: 12px; overflow: hidden; }
+  .comparison .panel-label {
+    padding: 0.75rem 1rem; font-size: 0.85rem; font-weight: 600; color: #888;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .comparison .panel img { width: 100%; display: block; }
+  .download-btn {
+    display: inline-block; margin-top: 1rem; padding: 0.6rem 1.5rem;
+    background: #2a2a2a; color: #4a9eff; border: 1px solid #4a9eff; border-radius: 8px;
+    cursor: pointer; font-size: 0.9rem; text-decoration: none; transition: background 0.2s;
+  }
+  .download-btn:hover { background: #1a2a3a; }
+
+  /* Loading */
+  .loading { display: none; text-align: center; padding: 3rem; }
+  .loading.visible { display: block; }
+  .spinner {
+    width: 40px; height: 40px; border: 3px solid #333; border-top-color: #4a9eff;
+    border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: #888; }
+
+  /* Error */
+  .error { display: none; background: #3a1a1a; border: 1px solid #cc4444; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; color: #ff8888; }
+  .error.visible { display: block; }
+
+  @media (max-width: 700px) {
+    .comparison { grid-template-columns: 1fr; }
+    .styles-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Room Redesign</h1>
+  <p class="subtitle">Upload a room photo, pick a style, get a redesigned render</p>
+
+  <div class="error" id="error"></div>
+
+  <div class="upload-area" id="uploadArea">
+    <div id="uploadPrompt">
+      <div class="upload-icon">&#128247;</div>
+      <p class="upload-text">Drag & drop a photo here or <strong>click to browse</strong></p>
+    </div>
+    <img id="previewImg" style="display:none">
+  </div>
+  <input type="file" id="fileInput" accept="image/*">
+
+  <div class="styles-section">
+    <h2>Choose a Style</h2>
+    <div class="styles-grid" id="stylesGrid"></div>
+  </div>
+
+  <button class="generate-btn" id="generateBtn" disabled>Generate Redesign</button>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p class="loading-text">Generating your redesign... this may take 30-60 seconds</p>
+  </div>
+
+  <div class="results" id="results">
+    <h2>Result</h2>
+    <div class="comparison">
+      <div class="panel">
+        <div class="panel-label">Before</div>
+        <img id="beforeImg">
+      </div>
+      <div class="panel">
+        <div class="panel-label">After — <span id="resultStyle"></span></div>
+        <img id="afterImg">
+      </div>
+    </div>
+    <a class="download-btn" id="downloadBtn" download="redesign.png">Download Result</a>
+  </div>
+</div>
+
+<script>
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const previewImg = document.getElementById('previewImg');
+const uploadPrompt = document.getElementById('uploadPrompt');
+const stylesGrid = document.getElementById('stylesGrid');
+const generateBtn = document.getElementById('generateBtn');
+const loading = document.getElementById('loading');
+const results = document.getElementById('results');
+const errorEl = document.getElementById('error');
+
+let selectedFile = null;
+let selectedStyle = null;
+
+// Upload handling
+uploadArea.addEventListener('click', () => fileInput.click());
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadArea.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+function handleFile(file) {
+  if (!file.type.startsWith('image/')) { showError('Please upload an image file.'); return; }
+  selectedFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    previewImg.src = e.target.result;
+    previewImg.style.display = 'block';
+    uploadPrompt.style.display = 'none';
+    uploadArea.classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
+  updateBtn();
+}
+
+// Styles
+fetch('/styles').then(r => r.json()).then(styles => {
+  styles.forEach(s => {
+    const btn = document.createElement('div');
+    btn.className = 'style-btn';
+    btn.textContent = s;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      selectedStyle = s;
+      updateBtn();
+    });
+    stylesGrid.appendChild(btn);
+  });
+});
+
+function updateBtn() {
+  generateBtn.disabled = !(selectedFile && selectedStyle);
+}
+
+function showError(msg) {
+  errorEl.textContent = msg;
+  errorEl.classList.add('visible');
+  setTimeout(() => errorEl.classList.remove('visible'), 8000);
+}
+
+// Generate
+generateBtn.addEventListener('click', async () => {
+  if (!selectedFile || !selectedStyle) return;
+  errorEl.classList.remove('visible');
+  results.classList.remove('visible');
+  loading.classList.add('visible');
+  generateBtn.disabled = true;
+
+  const formData = new FormData();
+  formData.append('image', selectedFile);
+  formData.append('style', selectedStyle);
+
+  try {
+    const resp = await fetch('/redesign', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (data.error) { showError(data.error); return; }
+
+    document.getElementById('beforeImg').src = previewImg.src;
+    document.getElementById('afterImg').src = data.url;
+    document.getElementById('resultStyle').textContent = data.style;
+    document.getElementById('downloadBtn').href = data.url;
+    results.classList.add('visible');
+  } catch (e) {
+    showError('Request failed: ' + e.message);
+  } finally {
+    loading.classList.remove('visible');
+    generateBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
