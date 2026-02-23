@@ -1,3 +1,4 @@
 flask
 replicate
 gunicorn
+pydantic>=2.0
