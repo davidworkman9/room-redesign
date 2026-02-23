@@ -49,7 +49,7 @@ def redesign():
 
     try:
         output = replicate.run(
-            "adirik/interior-design:76604baddc85b1b4616e1c6475eca080da339c8875bd4996705440484a6ebd7b",
+            "adirik/interior-design:76604baddc85b1b4616e1c6475eca080da339c8875bd4996705440484a6eac38",
             input={
                 "image": data_uri,
                 "prompt": prompt,
