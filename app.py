@@ -1,7 +1,8 @@
 import os
 import base64
-import requests as http_requests
+import tempfile
 from flask import Flask, render_template, request, jsonify
+from gradio_client import Client, handle_file
 
 app = Flask(__name__)
 
@@ -16,7 +17,7 @@ STYLES = {
     "japanese": "Transform this room into a japanese bathroom with soaking tub, natural stone, bamboo accents, zen influence, and warm wood tones",
 }
 
-HF_API_URL = "https://api-inference.huggingface.co/models/timbrooks/instruct-pix2pix"
+GRADIO_SPACE = "Manjushri/Instruct-Pix-2-Pix"
 
 
 @app.route("/")
@@ -38,51 +39,39 @@ def redesign():
     if style not in STYLES:
         return jsonify({"error": f"Unknown style: {style}"}), 400
 
-    token = os.environ.get("HF_API_TOKEN")
-    if not token:
-        return jsonify({"error": "HF_API_TOKEN not set"}), 500
-
     image_file = request.files["image"]
     image_bytes = image_file.read()
 
     prompt = STYLES[style]
 
     try:
-        payload = {
-            "inputs": {
-                "image": base64.b64encode(image_bytes).decode("utf-8"),
-                "prompt": prompt,
-            },
-            "parameters": {
-                "image_guidance_scale": 1.5,
-                "guidance_scale": 7.5,
-                "num_inference_steps": 30,
-            },
-        }
+        # Save uploaded image to temp file for gradio_client
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(image_bytes)
+            tmp_path = tmp.name
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
+        client = Client(GRADIO_SPACE)
+        result_path = client.predict(
+            source_img=handle_file(tmp_path),
+            instructions=prompt,
+            guide=7.5,
+            steps=20,
+            seed=42,
+            api_name="/predict",
+        )
 
-        resp = http_requests.post(HF_API_URL, json=payload, headers=headers, timeout=180)
+        # Clean up temp file
+        os.unlink(tmp_path)
 
-        if resp.status_code != 200:
-            error_msg = resp.text
-            try:
-                error_msg = resp.json().get("error", resp.text)
-            except Exception:
-                pass
-            return jsonify({"error": f"API error ({resp.status_code}): {error_msg}"}), 500
+        # Read result image and convert to base64 data URI
+        with open(result_path, "rb") as f:
+            result_bytes = f.read()
 
-        # Response is raw image bytes - convert to base64 data URI
-        result_b64 = base64.b64encode(resp.content).decode("utf-8")
-        result_url = f"data:image/png;base64,{result_b64}"
+        result_b64 = base64.b64encode(result_bytes).decode("utf-8")
+        result_url = f"data:image/webp;base64,{result_b64}"
 
         return jsonify({"url": result_url, "style": style})
 
-    except http_requests.Timeout:
-        return jsonify({"error": "Request timed out. The model may be loading - try again in a minute."}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
