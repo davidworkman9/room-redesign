@@ -16,7 +16,7 @@ STYLES = {
     "japanese": "Transform this room into a japanese bathroom with soaking tub, natural stone, bamboo accents, zen influence, and warm wood tones",
 }
 
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-Kontext-dev"
+HF_API_URL = "https://api-inference.huggingface.co/models/timbrooks/instruct-pix2pix"
 
 
 @app.route("/")
@@ -43,17 +43,20 @@ def redesign():
         return jsonify({"error": "HF_API_TOKEN not set"}), 500
 
     image_file = request.files["image"]
-    image_data = base64.b64encode(image_file.read()).decode("utf-8")
+    image_bytes = image_file.read()
 
     prompt = STYLES[style]
 
     try:
         payload = {
-            "inputs": image_data,
-            "parameters": {
+            "inputs": {
+                "image": base64.b64encode(image_bytes).decode("utf-8"),
                 "prompt": prompt,
+            },
+            "parameters": {
+                "image_guidance_scale": 1.5,
                 "guidance_scale": 7.5,
-                "num_inference_steps": 28,
+                "num_inference_steps": 30,
             },
         }
 
@@ -62,7 +65,7 @@ def redesign():
             "Content-Type": "application/json",
         }
 
-        resp = http_requests.post(HF_API_URL, json=payload, headers=headers, timeout=120)
+        resp = http_requests.post(HF_API_URL, json=payload, headers=headers, timeout=180)
 
         if resp.status_code != 200:
             error_msg = resp.text
