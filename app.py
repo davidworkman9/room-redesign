@@ -1,20 +1,22 @@
 import os
 import base64
-import replicate
+import requests as http_requests
 from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
 
 STYLES = {
-    "modern": "modern bathroom, clean lines, marble countertops, frameless glass shower, matte black fixtures, natural light, luxury finishes",
-    "industrial": "industrial bathroom, exposed brick, concrete floors, black metal fixtures, edison bulbs, raw materials, urban loft style",
-    "minimalist": "minimalist bathroom, white walls, floating vanity, walk-in shower, simple fixtures, clean design, uncluttered space",
-    "coastal": "coastal bathroom, blue and white palette, light wood, beadboard, nautical accents, sea glass, airy and bright",
-    "vintage": "vintage bathroom, clawfoot tub, hexagonal tile, brass fixtures, wainscoting, classic elegance, period details",
-    "scandinavian": "scandinavian bathroom, light wood, white tile, warm minimalism, natural textures, hygge style, clean and cozy",
-    "mediterranean": "mediterranean bathroom, terracotta tile, arched mirrors, wrought iron fixtures, warm earth tones, rustic elegance",
-    "japanese": "japanese bathroom, soaking tub, natural stone, bamboo accents, zen garden influence, minimalist tranquility, warm wood tones",
+    "modern": "Transform this room into a modern bathroom with clean lines, marble countertops, frameless glass shower, matte black fixtures, and natural light",
+    "industrial": "Transform this room into an industrial bathroom with exposed brick, concrete floors, black metal fixtures, edison bulbs, and raw materials",
+    "minimalist": "Transform this room into a minimalist bathroom with white walls, floating vanity, walk-in shower, simple fixtures, and clean uncluttered design",
+    "coastal": "Transform this room into a coastal bathroom with blue and white palette, light wood, beadboard, nautical accents, and airy bright feeling",
+    "vintage": "Transform this room into a vintage bathroom with clawfoot tub, hexagonal tile, brass fixtures, wainscoting, and classic elegance",
+    "scandinavian": "Transform this room into a scandinavian bathroom with light wood, white tile, warm minimalism, natural textures, and cozy hygge style",
+    "mediterranean": "Transform this room into a mediterranean bathroom with terracotta tile, arched mirrors, wrought iron fixtures, and warm earth tones",
+    "japanese": "Transform this room into a japanese bathroom with soaking tub, natural stone, bamboo accents, zen influence, and warm wood tones",
 }
+
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-Kontext-dev"
 
 
 @app.route("/")
@@ -36,36 +38,48 @@ def redesign():
     if style not in STYLES:
         return jsonify({"error": f"Unknown style: {style}"}), 400
 
-    token = os.environ.get("REPLICATE_API_TOKEN")
+    token = os.environ.get("HF_API_TOKEN")
     if not token:
-        return jsonify({"error": "REPLICATE_API_TOKEN not set"}), 500
+        return jsonify({"error": "HF_API_TOKEN not set"}), 500
 
     image_file = request.files["image"]
     image_data = base64.b64encode(image_file.read()).decode("utf-8")
-    mime = image_file.content_type or "image/jpeg"
-    data_uri = f"data:{mime};base64,{image_data}"
 
     prompt = STYLES[style]
 
     try:
-        output = replicate.run(
-            "adirik/interior-design:76604baddc85b1b4616e1c6475eca080da339c8875bd4996705440484a6eac38",
-            input={
-                "image": data_uri,
+        payload = {
+            "inputs": image_data,
+            "parameters": {
                 "prompt": prompt,
-                "guidance_scale": 15,
-                "negative_prompt": "lowres, watermark, banner, logo, text, blurry, ugly, distorted",
-                "num_inference_steps": 50,
+                "guidance_scale": 7.5,
+                "num_inference_steps": 28,
             },
-        )
-        # output is typically a URL or list of URLs
-        if isinstance(output, list):
-            result_url = str(output[0])
-        else:
-            result_url = str(output)
+        }
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        resp = http_requests.post(HF_API_URL, json=payload, headers=headers, timeout=120)
+
+        if resp.status_code != 200:
+            error_msg = resp.text
+            try:
+                error_msg = resp.json().get("error", resp.text)
+            except Exception:
+                pass
+            return jsonify({"error": f"API error ({resp.status_code}): {error_msg}"}), 500
+
+        # Response is raw image bytes - convert to base64 data URI
+        result_b64 = base64.b64encode(resp.content).decode("utf-8")
+        result_url = f"data:image/png;base64,{result_b64}"
 
         return jsonify({"url": result_url, "style": style})
 
+    except http_requests.Timeout:
+        return jsonify({"error": "Request timed out. The model may be loading - try again in a minute."}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
